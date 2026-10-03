@@ -1,5 +1,7 @@
 use std::io::{Read, Write};
+use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc as sync_mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -809,30 +811,20 @@ pub fn exec_command_blocking(command: &str, timeout: Duration) -> ExecOutput {
             }
         }
     };
-    let (_in_w, in_c) = match pipes::input_pipe() {
-        Ok(p) => p,
-        Err(e) => {
-            return ExecOutput {
-                code: None,
-                stdout: String::new(),
-                stderr: format!("pipe error: {e}"),
-                timed_out: false,
-            }
-        }
-    };
-
     let mut cmd = std::process::Command::new(if cfg!(windows) { "cmd" } else { "bash" });
     if cfg!(windows) {
         cmd.args(["/C", command]);
     } else {
-        cmd.args(["-lc", command]);
+        // 不用 -l（登录 shell）：profile 脚本在部分环境（如 CI runner）会拖慢甚至挂起
+        cmd.args(["-c", command]);
     };
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x0800_0000);
     }
-    cmd.stdout(out_c).stderr(err_c).stdin(in_c);
+    // stdin 直接给 null：不给子进程可读的管道，避免任何脚本等待输入导致命令不退出
+    cmd.stdout(out_c).stderr(err_c).stdin(Stdio::null());
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
@@ -845,10 +837,11 @@ pub fn exec_command_blocking(command: &str, timeout: Duration) -> ExecOutput {
         }
     };
 
-    // 读线程（排空管道避免写满死锁；不依赖 EOF）
+    // 读线程：结果经 channel 送回（不用 join —— 若管道 EOF 异常，join 会永久挂起）
     let exited = Arc::new(AtomicBool::new(false));
-    let t1_out = spawn_collect(out_r, exited.clone(), 200 * 1024);
-    let t2_err = spawn_collect(err_r, exited.clone(), 200 * 1024);
+    let (tx, rx) = sync_mpsc::channel::<(&'static str, String)>();
+    spawn_collect(out_r, exited.clone(), 200 * 1024, tx.clone(), "stdout");
+    spawn_collect(err_r, exited.clone(), 200 * 1024, tx, "stderr");
 
     let deadline = Instant::now() + timeout;
     let mut timed_out = false;
@@ -867,10 +860,31 @@ pub fn exec_command_blocking(command: &str, timeout: Duration) -> ExecOutput {
             Err(_) => break None,
         }
     };
+    // 子进程已退出：通知读端收尾（Windows 分支据此结束轮询并排空剩余数据）
     exited.store(true, Ordering::SeqCst);
+    // 子进程退出后等两个读端收尾；最多再等 5s，保证本函数必然返回
+    let mut stdout = String::new();
+    let mut stderr = String::new();
+    let collect_deadline = Instant::now() + Duration::from_secs(5);
+    let mut got = 0;
+    while got < 2 {
+        let remain = collect_deadline.saturating_duration_since(Instant::now());
+        if remain.is_zero() {
+            break;
+        }
+        match rx.recv_timeout(remain) {
+            Ok(("stdout", s)) => {
+                stdout = s;
+                got += 1;
+            }
+            Ok((_, s)) => {
+                stderr = s;
+                got += 1;
+            }
+            Err(_) => break,
+        }
+    }
     let code = status.and_then(|s| s.code());
-    let stdout = t1_out.join().unwrap_or_default();
-    let stderr = t2_err.join().unwrap_or_default();
     ExecOutput {
         code,
         stdout,
@@ -883,7 +897,9 @@ fn spawn_collect(
     mut r: pipes::PipeReader,
     exited: Arc<AtomicBool>,
     cap: usize,
-) -> std::thread::JoinHandle<String> {
+    tx: sync_mpsc::Sender<(&'static str, String)>,
+    tag: &'static str,
+) {
     std::thread::spawn(move || {
         let mut buf: Vec<u8> = Vec::new();
         let mut chunk = [0u8; 8192];
@@ -943,6 +959,6 @@ fn spawn_collect(
         if s.len() >= cap {
             s.push_str("...[截断]");
         }
-        s
-    })
+        let _ = tx.send((tag, s));
+    });
 }
