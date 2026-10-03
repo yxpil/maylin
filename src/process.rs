@@ -1,5 +1,4 @@
 use std::io::{Read, Write};
-use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc as sync_mpsc;
 use std::sync::{Arc, Mutex};
@@ -669,12 +668,14 @@ fn kill_child(child: &SharedChild) {
 /// 输出泵线程：读取管道并按行发出。不依赖 EOF —— Windows 上轮询可读字节数，
 /// 子进程退出（exited=true）后排空剩余数据即退出。
 fn spawn_reader(
-    mut r: pipes::PipeReader,
+    r: pipes::PipeReader,
     stream: &'static str,
     tx: mpsc::UnboundedSender<LogLine>,
     exited: Arc<AtomicBool>,
 ) {
     std::thread::spawn(move || {
+        #[cfg(windows)]
+        let mut r = r;
         let make_log = |text: String| LogLine {
             ts: Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
             stream: stream.to_string(),
@@ -726,6 +727,7 @@ fn spawn_reader(
         #[cfg(not(windows))]
         {
             use std::io::BufRead;
+            let _ = &exited; // unix 依赖可靠的 EOF，无需退出标志
             let mut lines = std::io::BufReader::new(r).lines();
             while let Some(Ok(line)) = lines.next() {
                 let _ = tx.send(make_log(line.chars().take(4000).collect()));
@@ -823,6 +825,7 @@ pub fn exec_command_blocking(command: &str, timeout: Duration) -> ExecOutput {
         cmd.creation_flags(0x0800_0000);
     }
     // stdin 直接给 null：不给子进程可读的管道，避免任何脚本等待输入导致命令不退出
+    use std::process::Stdio;
     cmd.stdout(out_c).stderr(err_c).stdin(Stdio::null());
     let mut child = match cmd.spawn() {
         Ok(c) => c,
@@ -920,23 +923,11 @@ pub fn exec_command_blocking(command: &str, timeout: Duration) -> ExecOutput {
     };
 
     let cap = 200 * 1024;
-    for (tag, stream) in [
-        ("stdout", child.stdout.take()),
-        ("stderr", child.stderr.take()),
-    ] {
-        let tx = tx.clone();
-        std::thread::spawn(move || {
-            if let Some(mut s) = stream {
-                let mut buf = Vec::new();
-                let _ = s.read_to_end(&mut buf);
-                buf.truncate(cap);
-                let mut out = String::from_utf8_lossy(&buf).to_string();
-                if buf.len() >= cap {
-                    out.push_str("...[截断]");
-                }
-                let _ = tx.send((tag, out));
-            }
-        });
+    if let Some(s) = child.stdout.take() {
+        drain_stream(s, cap, tx.clone(), "stdout");
+    }
+    if let Some(s) = child.stderr.take() {
+        drain_stream(s, cap, tx.clone(), "stderr");
     }
     drop(tx);
 
@@ -986,6 +977,27 @@ pub fn exec_command_blocking(command: &str, timeout: Duration) -> ExecOutput {
         stderr,
         timed_out,
     }
+}
+
+/// 读空一个子进程输出流并回传（unix exec 用）
+#[cfg(not(windows))]
+fn drain_stream<R: std::io::Read + Send + 'static>(
+    mut s: R,
+    cap: usize,
+    tx: sync_mpsc::Sender<(&'static str, String)>,
+    tag: &'static str,
+) {
+    std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = s.read_to_end(&mut buf);
+        let truncated = buf.len() >= cap;
+        buf.truncate(cap);
+        let mut out = String::from_utf8_lossy(&buf).to_string();
+        if truncated {
+            out.push_str("...[截断]");
+        }
+        let _ = tx.send((tag, out));
+    });
 }
 
 #[cfg(windows)]
