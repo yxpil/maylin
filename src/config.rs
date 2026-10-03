@@ -481,3 +481,141 @@ enabled = false
 
     Ok(true)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn minimal_root_config_uses_defaults() {
+        let toml = r#"
+[node]
+name = "t1"
+listen = "127.0.0.1:9000"
+"#;
+        let cfg: RootConfig = toml::from_str(toml).unwrap();
+        assert_eq!(cfg.node.data_dir, "data");
+        assert_eq!(cfg.node.log_buffer_lines, 2000);
+        assert!(cfg.auth.tokens.is_empty());
+        assert!(cfg.auth.users.is_empty());
+        assert!(!cfg.alert.enabled);
+        assert_eq!(cfg.alert.timeout_secs, 5);
+        assert!(!cfg.cluster.enabled);
+        assert!(cfg.load_balancer.is_empty());
+    }
+
+    #[test]
+    fn restart_policy_parsing_and_roundtrip() {
+        use RestartPolicy::*;
+        assert_eq!(RestartPolicy::default(), No);
+        let v: RestartPolicy = serde_json::from_str(r#""on-failure""#).unwrap();
+        assert_eq!(v, OnFailure);
+        assert_eq!(v.as_str(), "on-failure");
+        let v: RestartPolicy = serde_json::from_str(r#""always""#).unwrap();
+        assert_eq!(v, Always);
+        assert_eq!(v.as_str(), "always");
+        let v: RestartPolicy = serde_json::from_str(r#""no""#).unwrap();
+        assert_eq!(v, No);
+        assert_eq!(v.as_str(), "no");
+    }
+
+    #[test]
+    fn user_entry_default_role_is_viewer() {
+        let u: UserEntry = toml::from_str("name = \"ops\"\ntoken = \"abc\"\n").unwrap();
+        assert_eq!(u.role, "viewer");
+    }
+
+    #[test]
+    fn lb_defaults() {
+        let toml = r#"
+[node]
+name = "t"
+listen = "127.0.0.1:1"
+
+[[load_balancer]]
+name = "web"
+listen = "0.0.0.0:8000"
+upstreams = ["http://127.0.0.1:3001"]
+"#;
+        let cfg: RootConfig = toml::from_str(toml).unwrap();
+        let lb = &cfg.load_balancer[0];
+        assert_eq!(lb.health_path, "/health");
+        assert_eq!(lb.health_interval_secs, 10);
+    }
+
+    #[test]
+    fn resolve_path_absolute_and_relative() {
+        let root = Path::new("/srv/root");
+        assert!(resolve_path(root, &None).is_none());
+        let rel = resolve_path(root, &Some("instances/a.toml".into())).unwrap();
+        assert_eq!(rel, root.join("instances/a.toml"));
+        let abs = if cfg!(windows) { "C:\\etc\\passwd" } else { "/etc/passwd" };
+        let got = resolve_path(root, &Some(abs.into())).unwrap();
+        assert_eq!(got, Path::new(abs));
+    }
+
+    #[test]
+    fn load_plugins_missing_dir_is_ok_empty() {
+        let dir = Path::new("definitely-not-exist-maylin-xyz-12345");
+        assert!(!dir.exists());
+        let v = load_plugins(dir).unwrap();
+        assert!(v.is_empty());
+    }
+
+    #[test]
+    fn load_root_rejects_bad_toml() {
+        let dir = std::env::temp_dir().join(format!("maylin-cfg-err-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("bad.toml");
+        std::fs::write(&p, "this is = = = not toml [[[").unwrap();
+        assert!(load_root(&p).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn gen_token_is_40_chars_and_unique() {
+        let a = gen_token();
+        let b = gen_token();
+        assert_eq!(a.len(), 40);
+        assert_eq!(b.len(), 40);
+        assert_ne!(a, b, "两次随机 token 不应相同");
+        assert!(a.chars().all(|c| c.is_ascii_alphanumeric()));
+    }
+
+    #[test]
+    fn bootstrap_creates_files_then_is_noop() {
+        let dir = std::env::temp_dir().join(format!("maylin-bootstrap-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let cfg = dir.join("maylin.toml");
+        let fresh = bootstrap_if_missing(&cfg).unwrap();
+        assert!(fresh);
+        assert!(cfg.exists());
+        let loaded = load_root(&cfg).unwrap();
+        assert!(!loaded.auth.tokens.is_empty(), "bootstrap 应写入随机 token");
+        assert!(dir.join("plugins").is_dir());
+        assert!(dir.join("instances").is_dir());
+        assert!(dir.join("schedules").is_dir());
+        assert!(dir.join("data").join("logs").is_dir());
+        let before = std::fs::read_to_string(&cfg).unwrap();
+        let fresh2 = bootstrap_if_missing(&cfg).unwrap();
+        assert!(!fresh2);
+        assert_eq!(before, std::fs::read_to_string(&cfg).unwrap());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_instances_parses_and_sorts() {
+        let dir = std::env::temp_dir().join(format!("maylin-load-inst-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("b.toml"), "[instance]\nname=\"b\"\nplugin=\"node\"\n").unwrap();
+        std::fs::write(dir.join("a.toml"), "[instance]\nname=\"a\"\nplugin=\"node\"\n").unwrap();
+        let insts = load_instances(&dir).unwrap();
+        assert_eq!(insts.len(), 2);
+        assert_eq!(insts[0].name, "a");
+        assert_eq!(insts[1].name, "b");
+        assert_eq!(insts[0].restart_policy, RestartPolicy::No);
+        assert_eq!(insts[0].max_retries, 5);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

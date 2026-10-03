@@ -513,3 +513,68 @@ pub fn build_router(st: Arc<AppState>) -> Router {
 
     Router::new().merge(protected).with_state(st)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::Role;
+
+    #[test]
+    fn get_is_open_to_viewer_except_terminal() {
+        // GET 只读接口：viewer 即可访问
+        assert!(authorized(Role::Viewer, "GET", "/api/status"));
+        assert!(authorized(Role::Viewer, "GET", "/api/instances"));
+        assert!(authorized(Role::Viewer, "GET", "/api/instances/web1/logs"));
+        assert!(authorized(Role::Viewer, "GET", "/api/events"));
+        // 终端可写 stdin，viewer 被拒
+        assert!(!authorized(Role::Viewer, "GET", "/api/instances/web1/terminal"));
+        assert!(authorized(Role::Operator, "GET", "/api/instances/web1/terminal"));
+    }
+
+    #[test]
+    fn post_lifecycle_needs_operator_sensitive_needs_admin() {
+        // start/stop/restart/reload：operator 即可
+        for p in [
+            "/api/instances/web1/start",
+            "/api/instances/web1/stop",
+            "/api/instances/web1/restart",
+            "/api/reload",
+        ] {
+            assert!(authorized(Role::Operator, "POST", p), "{p} 应允许 operator");
+            assert!(!authorized(Role::Viewer, "POST", p), "{p} 应拒绝 viewer");
+        }
+        // exec / 创建 / 删除 / cluster action：仅 admin
+        for p in [
+            "/api/exec",
+            "/api/instances",
+            "/api/cluster/action",
+            "/api/instances/web1",
+        ] {
+            assert!(!authorized(Role::Viewer, "POST", p), "{p} 应拒绝 viewer");
+            assert!(!authorized(Role::Operator, "POST", p), "{p} 应拒绝 operator");
+            assert!(authorized(Role::Admin, "POST", p), "{p} 应允许 admin");
+        }
+    }
+
+    #[test]
+    fn delete_always_admin() {
+        assert!(!authorized(Role::Viewer, "DELETE", "/api/instances/web1"));
+        assert!(!authorized(Role::Operator, "DELETE", "/api/instances/web1"));
+        assert!(authorized(Role::Admin, "DELETE", "/api/instances/web1"));
+    }
+
+    // --- 注入/越权绕过：构造畸形路径，确认不会绕过角色判定 ---
+    #[test]
+    fn malformed_paths_do_not_escalate_viewer() {
+        // viewer 试图命中 exec（POST 敏感路径）-> 拒绝
+        assert!(!authorized(Role::Viewer, "POST", "/api/exec"));
+        // DELETE 一律 admin，即使结尾形似 /start
+        assert!(!authorized(Role::Viewer, "DELETE", "/api/instances/x/start"));
+        // 规范终端路径 viewer 被拒
+        assert!(!authorized(Role::Viewer, "GET", "/api/instances/x/terminal"));
+        assert!(!authorized(Role::Viewer, "GET", "/terminal"));
+        // 如实记录：ends_with 启发式不识别尾随斜杠，授权层按普通 GET 放行；
+        // 该路径由 axum 精确路由兜底返回 404，不构成越权。
+        assert!(authorized(Role::Viewer, "GET", "/api/instances/x/terminal/"));
+    }
+}

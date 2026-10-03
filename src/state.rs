@@ -265,3 +265,92 @@ impl AppState {
         self.data_dir.join("logs").join(format!("{name}.log"))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn role_parse_rank_and_str() {
+        assert_eq!(Role::parse("admin"), Some(Role::Admin));
+        assert_eq!(Role::parse("operator"), Some(Role::Operator));
+        assert_eq!(Role::parse("viewer"), Some(Role::Viewer));
+        // 未知角色 -> None（调用方应回退 viewer，而非放行）
+        assert_eq!(Role::parse("superuser"), None);
+        assert_eq!(Role::parse(""), None);
+        assert!(Role::Admin.rank() > Role::Operator.rank());
+        assert!(Role::Operator.rank() > Role::Viewer.rank());
+        assert_eq!(Role::Admin.as_str(), "admin");
+        assert_eq!(Role::Viewer.as_str(), "viewer");
+    }
+
+    #[test]
+    fn run_status_alive_and_str() {
+        assert!(RunStatus::Running.alive());
+        assert!(RunStatus::Starting.alive());
+        assert!(RunStatus::Unhealthy.alive());
+        assert!(!RunStatus::Stopped.alive());
+        assert!(!RunStatus::Exited.alive());
+        assert!(!RunStatus::Failed.alive());
+        assert_eq!(RunStatus::Failed.as_str(), "failed");
+    }
+
+    fn cfg_with_roles() -> RootConfig {
+        toml::from_str(
+            r#"
+[node]
+name = "n"
+listen = "127.0.0.1:1"
+[auth]
+tokens = ["admin-token"]
+[[auth.users]]
+name = "ops"
+token = "ops-token"
+role = "operator"
+[[auth.users]]
+name = "bob"
+token = "bob-token"
+role = "viewer"
+[[auth.users]]
+name = "empty"
+token = ""
+role = "admin"
+[[auth.users]]
+name = "weird"
+token = "weird-token"
+role = "root"
+"#,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn app_state_builds_role_map() {
+        let dir = std::env::temp_dir().join(format!("maylin-state-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let st = AppState::new(cfg_with_roles(), dir.clone()).unwrap();
+        // auth.tokens -> admin
+        assert_eq!(st.roles.get("admin-token"), Some(&Role::Admin));
+        // 细粒度用户按 role
+        assert_eq!(st.roles.get("ops-token"), Some(&Role::Operator));
+        assert_eq!(st.roles.get("bob-token"), Some(&Role::Viewer));
+        // 空 token 用户被跳过（不应进入映射）
+        assert!(!st.roles.contains_key(""));
+        // 未知 role 字符串回退 viewer（越权：写 root 不能变 admin）
+        assert_eq!(st.roles.get("weird-token"), Some(&Role::Viewer));
+        // 默认 token = 第一个 auth.tokens
+        assert_eq!(st.token(), "admin-token");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn log_file_path_is_under_data_logs() {
+        let dir = std::env::temp_dir().join(format!("maylin-lfp-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let st = AppState::new(cfg_with_roles(), dir.clone()).unwrap();
+        let p = st.log_file_path("my-app");
+        assert!(p.ends_with("logs/my-app.log"));
+        // 实例名直接拼入文件名（此处为可信配置），不做路径穿越校验在调用方
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

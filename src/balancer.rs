@@ -259,3 +259,31 @@ async fn proxy(State(rt): State<Arc<LbRuntime>>, req: Request) -> Response {
     )
         .into_response()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hop_headers_are_filtered_case_insensitive() {
+        for h in [
+            "Host",
+            "CONNECTION",
+            "Upgrade",
+            "Transfer-Encoding",
+            "keep-alive",
+            "PROXY-AUTHORIZATION",
+        ] {
+            let name = HeaderName::from_bytes(h.as_bytes()).unwrap();
+            assert!(is_hop(&name), "{h} 应被识别为逐跳头");
+        }
+    }
+
+    #[test]
+    fn content_headers_pass_through() {
+        for h in ["Content-Type", "X-Custom", "Authorization", "Cookie", "Accept"] {
+            let name = HeaderName::from_bytes(h.as_bytes()).unwrap();
+            assert!(!is_hop(&name), "{h} 不应被当作逐跳头剥离");
+        }
+    }
+}
