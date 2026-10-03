@@ -90,13 +90,17 @@ jobs:
       - name: 生成 SHA256 校验和
         run: |
           cd dist
-          sha256sum * > SHA256SUMS.txt
+          # dist 下同时存在归档与其解包目录（artifact 合并下载所致），只对归档做校验
+          sha256sum *.zip *.tar.gz > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - name: 创建 Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
+          files: |
+            dist/*.zip
+            dist/*.tar.gz
+            dist/SHA256SUMS.txt
           generate_release_notes: true
           body: |
             ## 安装
