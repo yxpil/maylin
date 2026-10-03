@@ -788,6 +788,11 @@ pub struct ExecOutput {
 }
 
 /// 阻塞执行 shell 命令（请在 tokio::task::spawn_blocking 中调用）
+///
+/// Windows 专属实现：使用经典 CreatePipe 匿名管道（本机环境中 std/tokio 的
+/// 命名管道实现不可用，os error 231），读端以 PeekNamedPipe 轮询 + 退出标志收尾，
+/// 不依赖 EOF（安全层可能额外持有继承句柄）。
+#[cfg(windows)]
 pub fn exec_command_blocking(command: &str, timeout: Duration) -> ExecOutput {
     let (out_r, out_c) = match pipes::output_pipe() {
         Ok(p) => p,
@@ -811,14 +816,8 @@ pub fn exec_command_blocking(command: &str, timeout: Duration) -> ExecOutput {
             }
         }
     };
-    let mut cmd = std::process::Command::new(if cfg!(windows) { "cmd" } else { "bash" });
-    if cfg!(windows) {
-        cmd.args(["/C", command]);
-    } else {
-        // 不用 -l（登录 shell）：profile 脚本在部分环境（如 CI runner）会拖慢甚至挂起
-        cmd.args(["-c", command]);
-    };
-    #[cfg(windows)]
+    let mut cmd = std::process::Command::new("cmd");
+    cmd.args(["/C", command]);
     {
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x0800_0000);
@@ -893,6 +892,103 @@ pub fn exec_command_blocking(command: &str, timeout: Duration) -> ExecOutput {
     }
 }
 
+/// unix 专属实现：直接用 std 的 piped stdio —— Linux/macOS 上 EOF 语义可靠
+/// （父进程侧写端由 std 在 spawn 后自动关闭，不存在 Windows 的继承句柄问题），
+/// 读端读完即 EOF，结果经 channel 回传并加超时兜底。
+#[cfg(not(windows))]
+pub fn exec_command_blocking(command: &str, timeout: Duration) -> ExecOutput {
+    use std::process::{Command, Stdio};
+
+    let (tx, rx) = sync_mpsc::channel::<(&'static str, String)>();
+    let mut cmd = Command::new("bash");
+    // 不用 -l（登录 shell）：profile 脚本在部分环境（如 CI runner）会拖慢甚至挂起
+    cmd.args(["-c", command]);
+    // stdin 给 null：不给子进程可读输入，杜绝脚本等待 stdin 导致命令不退出
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            return ExecOutput {
+                code: None,
+                stdout: String::new(),
+                stderr: format!("执行失败: {e}"),
+                timed_out: false,
+            }
+        }
+    };
+
+    let cap = 200 * 1024;
+    for (tag, stream) in [
+        ("stdout", child.stdout.take()),
+        ("stderr", child.stderr.take()),
+    ] {
+        let tx = tx.clone();
+        std::thread::spawn(move || {
+            if let Some(mut s) = stream {
+                let mut buf = Vec::new();
+                let _ = s.read_to_end(&mut buf);
+                buf.truncate(cap);
+                let mut out = String::from_utf8_lossy(&buf).to_string();
+                if buf.len() >= cap {
+                    out.push_str("...[截断]");
+                }
+                let _ = tx.send((tag, out));
+            }
+        });
+    }
+    drop(tx);
+
+    let deadline = Instant::now() + timeout;
+    let mut timed_out = false;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(s)) => break Some(s),
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    timed_out = true;
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    break None;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            Err(_) => break None,
+        }
+    };
+    // 子进程退出后等两个读端收尾；最多再等 5s，保证本函数必然返回
+    let mut stdout = String::new();
+    let mut stderr = String::new();
+    let collect_deadline = Instant::now() + Duration::from_secs(5);
+    let mut got = 0;
+    while got < 2 {
+        let remain = collect_deadline.saturating_duration_since(Instant::now());
+        if remain.is_zero() {
+            break;
+        }
+        match rx.recv_timeout(remain) {
+            Ok(("stdout", s)) => {
+                stdout = s;
+                got += 1;
+            }
+            Ok((_, s)) => {
+                stderr = s;
+                got += 1;
+            }
+            Err(_) => break,
+        }
+    }
+    let code = status.and_then(|s| s.code());
+    ExecOutput {
+        code,
+        stdout,
+        stderr,
+        timed_out,
+    }
+}
+
+#[cfg(windows)]
 fn spawn_collect(
     mut r: pipes::PipeReader,
     exited: Arc<AtomicBool>,
@@ -903,56 +999,37 @@ fn spawn_collect(
     std::thread::spawn(move || {
         let mut buf: Vec<u8> = Vec::new();
         let mut chunk = [0u8; 8192];
-        #[cfg(windows)]
-        {
-            loop {
-                match r.available() {
-                    Ok(0) => {
-                        if exited.load(Ordering::SeqCst) {
-                            break;
-                        }
-                        std::thread::sleep(Duration::from_millis(20));
+        loop {
+            match r.available() {
+                Ok(0) => {
+                    if exited.load(Ordering::SeqCst) {
+                        break;
                     }
-                    Ok(_) => {
-                        loop {
-                            match r.read(&mut chunk) {
-                                Ok(0) => break,
-                                Ok(n) => {
-                                    let take = (cap - buf.len()).min(n);
-                                    buf.extend_from_slice(&chunk[..take]);
-                                    if buf.len() >= cap {
-                                        break;
-                                    }
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                Ok(_) => {
+                    loop {
+                        match r.read(&mut chunk) {
+                            Ok(0) => break,
+                            Ok(n) => {
+                                let take = (cap - buf.len()).min(n);
+                                buf.extend_from_slice(&chunk[..take]);
+                                if buf.len() >= cap {
+                                    break;
                                 }
-                                Err(_) => break,
                             }
-                            match r.available() {
-                                Ok(n) if n > 0 && buf.len() < cap => continue,
-                                _ => break,
-                            }
+                            Err(_) => break,
                         }
-                        if buf.len() >= cap {
-                            break;
+                        match r.available() {
+                            Ok(n) if n > 0 && buf.len() < cap => continue,
+                            _ => break,
                         }
                     }
-                    Err(_) => break,
-                }
-            }
-        }
-        #[cfg(not(windows))]
-        {
-            let _ = &exited;
-            loop {
-                match r.read(&mut chunk) {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => {
-                        let take = (cap - buf.len()).min(n);
-                        buf.extend_from_slice(&chunk[..take]);
-                        if buf.len() >= cap {
-                            break;
-                        }
+                    if buf.len() >= cap {
+                        break;
                     }
                 }
+                Err(_) => break,
             }
         }
         let mut s = String::from_utf8_lossy(&buf).to_string();
