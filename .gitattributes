@@ -1,0 +1,9 @@
+# 统一换行符，避免跨平台协作时的无意义 diff
+* text=auto eol=lf
+
+# 二进制文件不做换行转换
+*.png binary
+*.jpg binary
+*.woff2 binary
+*.min.js binary
+*.min.css binary

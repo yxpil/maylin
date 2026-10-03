@@ -1,0 +1,40 @@
+[package]
+name = "maylin"
+version = "0.1.0"
+edition = "2021"
+description = "Maylin - 无 Docker 的 Rust 服务集群管理器（多子进程 / 插件化运行时 / 多服务器 / Token API / 终端 / 定时任务 / 负载均衡）"
+
+[[bin]]
+name = "maylin"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+axum = { version = "0.8", features = ["ws"] }
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+chrono = { version = "0.4", features = ["serde"] }
+cron = "0.12"
+uuid = { version = "1", features = ["v4"] }
+rand = "0.8"
+anyhow = "1"
+futures-util = "0.3"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_Pipes",
+    "Win32_System_Threading",
+] }
+
+[profile.release]
+strip = true
+lto = "thin"
+codegen-units = 1
