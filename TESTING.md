@@ -1,4 +1,10 @@
 # Maylin 测试说明
+- 测试完成：是（2026-10-04）
+- 测试日期：2026-10-04
+- 测试内容：单元 28（config/state/plugin/api/balancer 主路径+边界+错误路径）；集成 4（tests/auth_injection.rs，独立端口走真实 HTTP 节点）；注入 4（SQLi/XSS token→401、命令参数注入因 Command::new 无 shell 保持字面单参数、路径穿越→404）；钩子 2（插件未注册被拒、auth.fail 事件入环缓冲）。
+- 运行命令：cargo test --bins（单元）；cargo test --test auth_injection（集成）；cargo test --test e2e（既有 E2E，需 node/python）
+- 测试框架：Rust #[cfg(test)] + tests/ 集成测试
+- 模型：豆包（Doubao）生成
 
 本文件说明本仓库测试的范围、运行方式与预期结果。
 
