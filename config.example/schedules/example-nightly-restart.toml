@@ -1,0 +1,6 @@
+[schedule]
+name = "nightly-restart"
+cron = "0 3 * * *"           # 分 时 日 月 周：每天 03:00
+action = "restart"           # start | stop | restart
+target = "demo-node"         # 实例名或 "all"
+enabled = false

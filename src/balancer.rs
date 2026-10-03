@@ -62,7 +62,9 @@ const HOP_HEADERS: &[&str] = &[
 ];
 
 fn is_hop(name: &HeaderName) -> bool {
-    HOP_HEADERS.iter().any(|h| name.as_str().eq_ignore_ascii_case(h))
+    HOP_HEADERS
+        .iter()
+        .any(|h| name.as_str().eq_ignore_ascii_case(h))
 }
 
 /// 为每个 LB 配置启动反向代理服务 + 健康检查循环
@@ -109,11 +111,14 @@ pub async fn run_all(st: Arc<AppState>) -> anyhow::Result<()> {
         }
 
         // 代理服务
-        let app = axum::Router::new()
-            .fallback(proxy)
-            .with_state(rt.clone());
+        let app = axum::Router::new().fallback(proxy).with_state(rt.clone());
         let listener = tokio::net::TcpListener::bind(&lb.listen).await?;
-        tracing::info!("负载均衡 [{}] 监听 {} -> {} 个上游", lb.name, lb.listen, lb.upstreams.len());
+        tracing::info!(
+            "负载均衡 [{}] 监听 {} -> {} 个上游",
+            lb.name,
+            lb.listen,
+            lb.upstreams.len()
+        );
         tokio::spawn(async move {
             if let Err(e) = axum::serve(listener, app).await {
                 tracing::error!("负载均衡服务退出: {e}");
@@ -141,7 +146,14 @@ async fn health_check(st: &Arc<AppState>, rt: &Arc<LbRuntime>) {
             up.healthy = true;
             if !was {
                 tracing::info!("LB [{}] 上游 {} 恢复健康", rt.name, up.url);
-                crate::events::emit(st, "lb.up", &up.url, "info", &format!("负载均衡 [{}] 上游恢复", rt.name)).await;
+                crate::events::emit(
+                    st,
+                    "lb.up",
+                    &up.url,
+                    "info",
+                    &format!("负载均衡 [{}] 上游恢复", rt.name),
+                )
+                .await;
             }
         } else {
             up.fails += 1;
@@ -149,7 +161,14 @@ async fn health_check(st: &Arc<AppState>, rt: &Arc<LbRuntime>) {
                 up.healthy = false;
                 if was {
                     tracing::warn!("LB [{}] 上游 {} 标记不健康", rt.name, up.url);
-                    crate::events::emit(st, "lb.down", &up.url, "warn", &format!("负载均衡 [{}] 上游探活失败已摘除", rt.name)).await;
+                    crate::events::emit(
+                        st,
+                        "lb.down",
+                        &up.url,
+                        "warn",
+                        &format!("负载均衡 [{}] 上游探活失败已摘除", rt.name),
+                    )
+                    .await;
                 }
             }
         }
@@ -159,7 +178,9 @@ async fn health_check(st: &Arc<AppState>, rt: &Arc<LbRuntime>) {
 async fn proxy(State(rt): State<Arc<LbRuntime>>, req: Request) -> Response {
     rt.request_count.fetch_add(1, Ordering::SeqCst);
     let (parts, body) = req.into_parts();
-    let bytes = axum::body::to_bytes(body, 16 * 1024 * 1024).await.unwrap_or_default();
+    let bytes = axum::body::to_bytes(body, 16 * 1024 * 1024)
+        .await
+        .unwrap_or_default();
 
     let pq = parts
         .uri
@@ -231,7 +252,10 @@ async fn proxy(State(rt): State<Arc<LbRuntime>>, req: Request) -> Response {
 
     (
         axum::http::StatusCode::BAD_GATEWAY,
-        format!("maylin: all upstreams failed: {}", last_err.map(|e| e.to_string()).unwrap_or_default()),
+        format!(
+            "maylin: all upstreams failed: {}",
+            last_err.map(|e| e.to_string()).unwrap_or_default()
+        ),
     )
         .into_response()
 }

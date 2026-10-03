@@ -30,7 +30,9 @@ static LAST_AUTH_FAIL: AtomicI64 = AtomicI64::new(0);
 /// 记录事件：入环缓冲 → 异步落盘 →（可选）webhook 告警
 pub async fn emit(st: &AppState, kind: &str, target: &str, level: &str, message: &str) {
     let ev = Event {
-        ts: chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+        ts: chrono::Local::now()
+            .format("%Y-%m-%d %H:%M:%S%.3f")
+            .to_string(),
         kind: kind.into(),
         target: target.into(),
         level: level.into(),
@@ -79,7 +81,12 @@ pub async fn emit(st: &AppState, kind: &str, target: &str, level: &str, message:
         "event": ev,
     });
     tokio::spawn(async move {
-        let _ = client.post(&url).json(&payload).timeout(timeout).send().await;
+        let _ = client
+            .post(&url)
+            .json(&payload)
+            .timeout(timeout)
+            .send()
+            .await;
     });
 }
 

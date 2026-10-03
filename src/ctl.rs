@@ -82,7 +82,13 @@ pub async fn run(url: Option<String>, token: Option<String>, cmd: CtlCmd) -> Res
             print_pretty(&v);
         }
         CtlCmd::Events { limit } => {
-            let v = do_get(&client, &base, &format!("/api/events?limit={limit}"), &token).await?;
+            let v = do_get(
+                &client,
+                &base,
+                &format!("/api/events?limit={limit}"),
+                &token,
+            )
+            .await?;
             if let Some(arr) = v["events"].as_array() {
                 for e in arr {
                     let ts = e["ts"].as_str().unwrap_or("");
@@ -100,18 +106,40 @@ pub async fn run(url: Option<String>, token: Option<String>, cmd: CtlCmd) -> Res
             }
         }
         CtlCmd::Start { name } => {
-            let v = do_post(&client, &base, &format!("/api/instances/{name}/start"), &token).await?;
+            let v = do_post(
+                &client,
+                &base,
+                &format!("/api/instances/{name}/start"),
+                &token,
+            )
+            .await?;
             print_pretty(&v);
         }
         CtlCmd::Stop { name } => {
-            let v = do_post(&client, &base, &format!("/api/instances/{name}/stop"), &token).await?;
+            let v = do_post(
+                &client,
+                &base,
+                &format!("/api/instances/{name}/stop"),
+                &token,
+            )
+            .await?;
             print_pretty(&v);
         }
         CtlCmd::Restart { name } => {
-            let v = do_post(&client, &base, &format!("/api/instances/{name}/restart"), &token).await?;
+            let v = do_post(
+                &client,
+                &base,
+                &format!("/api/instances/{name}/restart"),
+                &token,
+            )
+            .await?;
             print_pretty(&v);
         }
-        CtlCmd::Logs { name, lines, follow } => {
+        CtlCmd::Logs {
+            name,
+            lines,
+            follow,
+        } => {
             let mut seen: usize = 0;
             let mut first = true;
             loop {

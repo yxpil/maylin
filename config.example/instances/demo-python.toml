@@ -1,0 +1,11 @@
+[instance]
+name = "demo-python"
+plugin = "python"
+workdir = "../demo"
+script = "app.py"
+args = ["--port", "{port}"]
+port = 3002
+autostart = false
+restart_policy = "on-failure"
+max_retries = 5
+health_url = "http://127.0.0.1:{port}/health"

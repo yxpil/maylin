@@ -1,5 +1,12 @@
 # Maylin — 无 Docker 的 Rust 服务集群管理器
 
+[![CI](https://github.com/yxpil/maylin/actions/workflows/ci.yml/badge.svg)](https://github.com/yxpil/maylin/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/yxpil/maylin?color=4ea1ff)](https://github.com/yxpil/maylin/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-22d3a7)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-windows%20%7C%20linux%20%7C%20macos-8b9bb0)](#跨平台)
+
+> 📖 项目主页（含架构图与实测数据）：**https://yxpil.github.io/maylin/**
+
 通过 **Rust 子进程**直接管理任意数量的 JS / Python / 二进制实例（每个实例独占端口，无需 Docker），
 以**插件**适配运行时，支持**多服务器集群**、**Token 控制 API**、**命令终端**、**定时启动**与**负载均衡**。
 
@@ -15,16 +22,31 @@ maylinctl / HTTP API / WS 终端
    instance:demo-node:3001   instance:demo-python:3002   ...
 ```
 
+## 安装
+
+三种方式任选：
+
+```bash
+# 方式一：下载预编译二进制（Windows / Linux / macOS，见 Releases）
+# https://github.com/yxpil/maylin/releases
+
+# 方式二：从源码构建
+git clone https://github.com/yxpil/maylin && cd maylin
+cargo build --release
+
+# 方式三：cargo install（从 git）
+cargo install --git https://github.com/yxpil/maylin
+```
+
 ## 快速开始
 
 ```bash
-# 1. 构建
-cargo build --release
-
-# 2. 首次启动（自动生成 config/ 默认配置 + 随机 Token + demo 示例）
+# 1. 启动（首次运行自动生成 config/ 默认配置 + 随机 Token + demo 示例）
 target/release/maylin node --config config/maylin.toml
 
-# 3. 管理客户端
+# 若想手动放置配置：cp -r config.example config 后修改即可（示例模板不含真实 Token）
+
+# 2. 管理客户端
 export MAYLIN_TOKEN=<配置中的 tokens[0]>
 export MAYLIN_URL=http://127.0.0.1:7000
 
@@ -35,13 +57,24 @@ maylin ctl status                 # 节点状态
 maylin ctl logs demo-node -f      # 跟踪日志
 maylin ctl terminal demo-node     # 交互式终端（stdin/stdout 接入）
 maylin ctl exec "dir"             # 在节点上执行命令
+maylin ctl events                 # 事件审计
 maylin ctl reload                 # 重新扫描配置目录
 
-# 4. 负载均衡（配置中已带 :8000 -> 3001/3002 的示例）
+# 3. 负载均衡（配置中已带 :8000 -> 3001/3002 的示例）
 curl http://127.0.0.1:8000/       # 轮询命中两个实例
 ```
 
-## E2E 测试
+## CI 与测试
+
+仓库配置了三套 GitHub Actions：
+
+| 工作流 | 触发 | 做什么 |
+|---|---|---|
+| **CI**（`.github/workflows/ci.yml`） | push / PR | Windows + Linux 双平台 `cargo build --release`、`cargo test --test e2e`、fmt 检查与 clippy |
+| **Release**（`.github/workflows/release.yml`） | 推送 `v*` 标签 | 三平台构建二进制并发布 Release 附件（含 SHA256SUMS） |
+| **Pages**（`.github/workflows/pages.yml`） | `docs/**` 变更 | 部署项目展示页到 GitHub Pages |
+
+### E2E 测试
 
 集成测试会拉起真实节点二进制（独立端口，不与开发环境冲突），
 完整验证：实例启停 → 直连/LB 轮询 → 故障转移 → exec → 认证拒绝 → 事件 → 状态持久化：
@@ -53,11 +86,13 @@ cargo test --test e2e -- --nocapture   # 约 20s，需要 PATH 中有 node 与 p
 ## 目录结构
 
 ```
-config/maylin.toml        # 主配置：节点名/监听/Token/集群peers/负载均衡
+config.example/           # 配置模板（不含真实 Token，可 cp -r 后使用）
+config/maylin.toml        # 主配置：节点名/监听/Token/角色/告警/集群peers/负载均衡
 config/plugins/*.toml     # 运行时插件（如何启动某一类程序）
 config/instances/*.toml   # 实例定义（每个实例 = 一个子进程 + 独占端口）
 config/schedules/*.toml   # 定时任务（cron 启动/停止/重启）
 demo/                     # 示例 JS / Python 应用
+docs/index.html           # GitHub Pages 项目主页
 data/logs/<name>.log      # 实例运行日志（持久化）
 data/events.jsonl         # 事件审计日志（追加式，持久化）
 data/state.json           # 运行状态快照（每 10s 原子写入）

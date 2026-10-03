@@ -39,7 +39,17 @@ pub mod pipes {
             use windows_sys::Win32::System::Pipes::PeekNamedPipe;
             let mut avail: u32 = 0;
             let h = self.f.as_raw_handle() as *mut std::ffi::c_void;
-            if unsafe { PeekNamedPipe(h, std::ptr::null_mut(), 0, std::ptr::null_mut(), &mut avail, std::ptr::null_mut()) } == 0 {
+            if unsafe {
+                PeekNamedPipe(
+                    h,
+                    std::ptr::null_mut(),
+                    0,
+                    std::ptr::null_mut(),
+                    &mut avail,
+                    std::ptr::null_mut(),
+                )
+            } == 0
+            {
                 return Err(io::Error::last_os_error());
             }
             Ok(avail)
@@ -71,7 +81,9 @@ pub mod pipes {
             use std::os::windows::io::{FromRawHandle, RawHandle};
             let (r, w) = create_pipe(false, true)?;
             Ok((
-                PipeReader { f: unsafe { std::fs::File::from_raw_handle(r as RawHandle) } },
+                PipeReader {
+                    f: unsafe { std::fs::File::from_raw_handle(r as RawHandle) },
+                },
                 unsafe { Stdio::from_raw_handle(w as RawHandle) },
             ))
         }
@@ -90,7 +102,9 @@ pub mod pipes {
             use std::os::windows::io::{FromRawHandle, RawHandle};
             let (r, w) = create_pipe(true, false)?;
             Ok((
-                PipeWriter { f: unsafe { std::fs::File::from_raw_handle(w as RawHandle) } },
+                PipeWriter {
+                    f: unsafe { std::fs::File::from_raw_handle(w as RawHandle) },
+                },
                 unsafe { Stdio::from_raw_handle(r as RawHandle) },
             ))
         }
@@ -137,7 +151,7 @@ pub mod pipes {
     }
 
     #[cfg(unix)]
-    use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd};
+    use std::os::fd::{FromRawFd, IntoRawFd};
 }
 
 type SharedChild = Arc<Mutex<Option<std::process::Child>>>;
@@ -401,7 +415,9 @@ async fn run_lifecycle(st: Arc<AppState>, inst: Arc<Instance>, launch: ResolvedL
                 return;
             }
         };
-        cmd.stdout(stdout_stdio).stderr(stderr_stdio).stdin(stdin_stdio);
+        cmd.stdout(stdout_stdio)
+            .stderr(stderr_stdio)
+            .stdin(stdin_stdio);
         let child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
@@ -416,7 +432,14 @@ async fn run_lifecycle(st: Arc<AppState>, inst: Arc<Instance>, launch: ResolvedL
         inst.pid.store(pid as i32, Ordering::SeqCst);
         inst.set_status(RunStatus::Running).await;
         *inst.started_at.write().await = Some(Local::now());
-        crate::events::emit(&st, "instance.start", &name, "info", &format!("子进程已拉起 pid={pid} port={:?}", inst.spec.port)).await;
+        crate::events::emit(
+            &st,
+            "instance.start",
+            &name,
+            "info",
+            &format!("子进程已拉起 pid={pid} port={:?}", inst.spec.port),
+        )
+        .await;
 
         let (ctrl_tx, mut ctrl_rx) = mpsc::channel::<Ctrl>(64);
         *inst.ctrl.write().await = Some(ctrl_tx);
@@ -436,7 +459,9 @@ async fn run_lifecycle(st: Arc<AppState>, inst: Arc<Instance>, launch: ResolvedL
                     .ok();
                 let wf = Arc::new(AsyncMutex::new(file));
                 while let Some(line) = log_rx.recv().await {
-                    inst2.push_log(st2.cfg.node.log_buffer_lines, line, &wf).await;
+                    inst2
+                        .push_log(st2.cfg.node.log_buffer_lines, line, &wf)
+                        .await;
                 }
             });
         }
@@ -554,8 +579,20 @@ async fn run_lifecycle(st: Arc<AppState>, inst: Arc<Instance>, launch: ResolvedL
         }
 
         let code_ok = exit_desc == "exit code 0";
-        inst.set_status(if code_ok { RunStatus::Exited } else { RunStatus::Failed }).await;
-        crate::events::emit(&st, "instance.exit", &name, "warn", &format!("异常退出: {exit_desc}")).await;
+        inst.set_status(if code_ok {
+            RunStatus::Exited
+        } else {
+            RunStatus::Failed
+        })
+        .await;
+        crate::events::emit(
+            &st,
+            "instance.exit",
+            &name,
+            "warn",
+            &format!("异常退出: {exit_desc}"),
+        )
+        .await;
         if started.elapsed() > Duration::from_secs(120) {
             inst.restarts.store(0, Ordering::SeqCst);
         }
@@ -579,15 +616,16 @@ async fn run_lifecycle(st: Arc<AppState>, inst: Arc<Instance>, launch: ResolvedL
                 "instance.giveup",
                 &name,
                 "error",
-                &format!("连续失败 {} 次，放弃自动重启（最后退出: {exit_desc}）", inst.spec.max_retries),
+                &format!(
+                    "连续失败 {} 次，放弃自动重启（最后退出: {exit_desc}）",
+                    inst.spec.max_retries
+                ),
             )
             .await;
             return;
         }
         let backoff = Duration::from_secs((2 * retries).clamp(1, 30));
-        tracing::warn!(
-            "实例 {name} 退出（{exit_desc}），{backoff:?} 后第 {retries} 次自动重启"
-        );
+        tracing::warn!("实例 {name} 退出（{exit_desc}），{backoff:?} 后第 {retries} 次自动重启");
         crate::events::emit(
             &st,
             "instance.restart",
@@ -608,7 +646,14 @@ async fn fail_spawn(st: &Arc<AppState>, inst: &Arc<Instance>, msg: String) {
     inst.set_status(RunStatus::Failed).await;
     inst.set_last_exit(msg.clone()).await;
     tracing::error!("实例 {} 启动失败: {msg}", inst.spec.name);
-    crate::events::emit(st, "instance.fail", &inst.spec.name, "error", &format!("启动失败: {msg}")).await;
+    crate::events::emit(
+        st,
+        "instance.fail",
+        &inst.spec.name,
+        "error",
+        &format!("启动失败: {msg}"),
+    )
+    .await;
 }
 
 fn kill_child(child: &SharedChild) {
@@ -716,7 +761,14 @@ async fn health_loop(st: Arc<AppState>, inst: Arc<Instance>, url: String, interv
             if misses >= 3 && cur == RunStatus::Running {
                 tracing::warn!("实例 {} 健康检查连续失败，标记 unhealthy", inst.spec.name);
                 inst.set_status(RunStatus::Unhealthy).await;
-                crate::events::emit(&st, "instance.unhealthy", &inst.spec.name, "warn", "健康检查连续 3 次失败").await;
+                crate::events::emit(
+                    &st,
+                    "instance.unhealthy",
+                    &inst.spec.name,
+                    "warn",
+                    "健康检查连续 3 次失败",
+                )
+                .await;
             }
         }
     }
@@ -737,15 +789,36 @@ pub struct ExecOutput {
 pub fn exec_command_blocking(command: &str, timeout: Duration) -> ExecOutput {
     let (out_r, out_c) = match pipes::output_pipe() {
         Ok(p) => p,
-        Err(e) => return ExecOutput { code: None, stdout: String::new(), stderr: format!("pipe error: {e}"), timed_out: false },
+        Err(e) => {
+            return ExecOutput {
+                code: None,
+                stdout: String::new(),
+                stderr: format!("pipe error: {e}"),
+                timed_out: false,
+            }
+        }
     };
     let (err_r, err_c) = match pipes::output_pipe() {
         Ok(p) => p,
-        Err(e) => return ExecOutput { code: None, stdout: String::new(), stderr: format!("pipe error: {e}"), timed_out: false },
+        Err(e) => {
+            return ExecOutput {
+                code: None,
+                stdout: String::new(),
+                stderr: format!("pipe error: {e}"),
+                timed_out: false,
+            }
+        }
     };
     let (_in_w, in_c) = match pipes::input_pipe() {
         Ok(p) => p,
-        Err(e) => return ExecOutput { code: None, stdout: String::new(), stderr: format!("pipe error: {e}"), timed_out: false },
+        Err(e) => {
+            return ExecOutput {
+                code: None,
+                stdout: String::new(),
+                stderr: format!("pipe error: {e}"),
+                timed_out: false,
+            }
+        }
     };
 
     let mut cmd = std::process::Command::new(if cfg!(windows) { "cmd" } else { "bash" });
@@ -762,7 +835,14 @@ pub fn exec_command_blocking(command: &str, timeout: Duration) -> ExecOutput {
     cmd.stdout(out_c).stderr(err_c).stdin(in_c);
     let mut child = match cmd.spawn() {
         Ok(c) => c,
-        Err(e) => return ExecOutput { code: None, stdout: String::new(), stderr: format!("执行失败: {e}"), timed_out: false },
+        Err(e) => {
+            return ExecOutput {
+                code: None,
+                stdout: String::new(),
+                stderr: format!("执行失败: {e}"),
+                timed_out: false,
+            }
+        }
     };
 
     // 读线程（排空管道避免写满死锁；不依赖 EOF）
@@ -791,7 +871,12 @@ pub fn exec_command_blocking(command: &str, timeout: Duration) -> ExecOutput {
     let code = status.and_then(|s| s.code());
     let stdout = t1_out.join().unwrap_or_default();
     let stderr = t2_err.join().unwrap_or_default();
-    ExecOutput { code, stdout, stderr, timed_out }
+    ExecOutput {
+        code,
+        stdout,
+        stderr,
+        timed_out,
+    }
 }
 
 fn spawn_collect(

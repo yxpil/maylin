@@ -1,0 +1,6 @@
+[plugin]
+name = "python"
+command = "python"           # Linux 上若只有 python3，请改为 "python3"
+args = ["{script}"]
+health_interval_secs = 10
+grace_secs = 5

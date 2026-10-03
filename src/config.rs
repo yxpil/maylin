@@ -274,8 +274,8 @@ fn read_tomls(dir: &Path) -> Result<Vec<(PathBuf, String)>> {
         .collect();
     entries.sort();
     for p in entries {
-        let raw = std::fs::read_to_string(&p)
-            .with_context(|| format!("读取 {} 失败", p.display()))?;
+        let raw =
+            std::fs::read_to_string(&p).with_context(|| format!("读取 {} 失败", p.display()))?;
         out.push((p, raw));
     }
     Ok(out)
@@ -284,7 +284,8 @@ fn read_tomls(dir: &Path) -> Result<Vec<(PathBuf, String)>> {
 pub fn load_plugins(dir: &Path) -> Result<Vec<PluginSpec>> {
     let mut out = Vec::new();
     for (p, raw) in read_tomls(dir)? {
-        let f: PluginFile = toml::from_str(&raw).with_context(|| format!("解析 {} 失败", p.display()))?;
+        let f: PluginFile =
+            toml::from_str(&raw).with_context(|| format!("解析 {} 失败", p.display()))?;
         out.push(f.plugin);
     }
     Ok(out)
@@ -329,7 +330,9 @@ pub fn resolve_path(root: &Path, p: &Option<String>) -> Option<PathBuf> {
 pub fn gen_token() -> String {
     use rand::Rng;
     let mut rng = rand::thread_rng();
-    (0..40).map(|_| rng.sample(rand::distributions::Alphanumeric) as char).collect()
+    (0..40)
+        .map(|_| rng.sample(rand::distributions::Alphanumeric) as char)
+        .collect()
 }
 
 pub fn bootstrap_if_missing(config_path: &Path) -> Result<bool> {

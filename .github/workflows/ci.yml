@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  e2e:
+    name: E2E (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Rust 工具链
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: 缓存 Cargo
+        uses: Swatinem/rust-cache@v2
+
+      # E2E 需要 node 与 python 两个 demo 运行时；Linux 上官方镜像只有 python3，
+      # 而示例插件里写的是 `python`，这里补齐同名命令。
+      - name: 准备运行时依赖
+        shell: bash
+        run: |
+          set -e
+          node --version
+          if [ "$RUNNER_OS" = "Linux" ] && ! command -v python >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq python-is-python3
+          fi
+          python --version
+
+      - name: 编译
+        run: cargo build --release
+
+      - name: E2E 集成测试
+        run: cargo test --test e2e -- --nocapture
+
+      - name: 单元测试
+        run: cargo test --bins
+
+  lint:
+    name: Lint (fmt + clippy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Rust 工具链
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: 缓存 Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: 格式检查
+        run: cargo fmt --all -- --check
+
+      # clippy 只做提示，不阻塞合并（历史代码尚有风格类告警）
+      - name: Clippy
+        continue-on-error: true
+        run: cargo clippy --all-targets -- -D warnings

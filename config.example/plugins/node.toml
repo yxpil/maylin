@@ -1,0 +1,7 @@
+[plugin]
+name = "node"
+command = "node"             # 可执行程序，支持 {script} {port} {name} 占位符
+args = ["{script}"]
+health_interval_secs = 10
+grace_secs = 5
+# shutdown_line = "exit"     # 优雅停止时写入 stdin 的行

@@ -253,7 +253,12 @@ async fn e2e_full_lifecycle() {
 
     // 1. 节点就绪（收到任意响应即就绪；/api/status 需要 token，这里只探测连通性）
     assert!(
-        wait_api_up(&client, &format!("{base}/api/status"), Duration::from_secs(30)).await,
+        wait_api_up(
+            &client,
+            &format!("{base}/api/status"),
+            Duration::from_secs(30)
+        )
+        .await,
         "节点 30s 内未就绪"
     );
     let status = api_get(&client, "/api/status").await;
@@ -271,7 +276,12 @@ async fn e2e_full_lifecycle() {
     // 3. 直连实例端口
     for p in [INST1_PORT, INST2_PORT] {
         assert!(
-            wait_http_ok(&client, &format!("http://127.0.0.1:{p}/"), Duration::from_secs(10)).await,
+            wait_http_ok(
+                &client,
+                &format!("http://127.0.0.1:{p}/"),
+                Duration::from_secs(10)
+            )
+            .await,
             "实例端口 {p} 不可达"
         );
     }
@@ -298,7 +308,10 @@ async fn e2e_full_lifecycle() {
             hit_py = true;
         }
     }
-    assert!(hit_node && hit_py, "LB 轮询未覆盖双实例 (node={hit_node} py={hit_py})");
+    assert!(
+        hit_node && hit_py,
+        "LB 轮询未覆盖双实例 (node={hit_node} py={hit_py})"
+    );
     println!("[4] LB 轮询 OK");
 
     // 5. 故障转移：停掉 demo-1，LB 仍 200（重试切到 demo-2）
@@ -316,7 +329,10 @@ async fn e2e_full_lifecycle() {
     println!("[5] LB 故障转移 OK");
 
     // 6. 重启恢复 + 崩溃重启能力（重启后 running）
-    assert_eq!(api_post(&client, "/api/instances/demo-1/restart").await, 200);
+    assert_eq!(
+        api_post(&client, "/api/instances/demo-1/restart").await,
+        200
+    );
     wait_status(&client, "demo-1", "running", Duration::from_secs(20)).await;
     println!("[6] 实例恢复 OK");
 
@@ -356,8 +372,14 @@ async fn e2e_full_lifecycle() {
         .iter()
         .filter_map(|e| e["kind"].as_str())
         .collect();
-    assert!(kinds.contains(&"instance.start"), "缺少 instance.start 事件: {kinds:?}");
-    assert!(kinds.contains(&"instance.stop"), "缺少 instance.stop 事件: {kinds:?}");
+    assert!(
+        kinds.contains(&"instance.start"),
+        "缺少 instance.start 事件: {kinds:?}"
+    );
+    assert!(
+        kinds.contains(&"instance.stop"),
+        "缺少 instance.stop 事件: {kinds:?}"
+    );
     println!("[9] 事件系统 OK");
 
     // 10. 持久化：state.json 快照存在且含实例

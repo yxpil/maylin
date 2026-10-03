@@ -55,7 +55,14 @@ async fn schedule_loop(st: Arc<AppState>, s: ScheduleSpec) {
             continue;
         }
         tracing::info!("定时任务 [{}] 触发: {} {}", s.name, s.action, s.target);
-        crate::events::emit(&st, "schedule.fire", &s.name, "info", &format!("触发 {} {}", s.action, s.target)).await;
+        crate::events::emit(
+            &st,
+            "schedule.fire",
+            &s.name,
+            "info",
+            &format!("触发 {} {}", s.action, s.target),
+        )
+        .await;
         run_action(&st, &s).await;
     }
 }

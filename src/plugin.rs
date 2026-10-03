@@ -35,7 +35,10 @@ pub fn resolve(
         .ok_or_else(|| anyhow!("未找到插件 \"{}\"，请检查 plugins/ 目录", spec.plugin))?;
 
     let script = spec.script.clone().unwrap_or_default();
-    let port = spec.port.map(|p| p.to_string()).unwrap_or_else(|| "0".into());
+    let port = spec
+        .port
+        .map(|p| p.to_string())
+        .unwrap_or_else(|| "0".into());
     let name = spec.name.as_str();
 
     let program = subst(&plugin.command, &script, &port, name);
@@ -76,6 +79,9 @@ pub fn resolve(
         health_url,
         health_interval_secs: plugin.health_interval_secs.max(3),
         grace_secs: plugin.grace_secs.max(1),
-        shutdown_line: spec.shutdown_line.clone().or_else(|| plugin.shutdown_line.clone()),
+        shutdown_line: spec
+            .shutdown_line
+            .clone()
+            .or_else(|| plugin.shutdown_line.clone()),
     })
 }

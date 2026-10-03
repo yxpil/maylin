@@ -1,0 +1,12 @@
+[instance]
+name = "demo-node"
+plugin = "node"
+workdir = "../demo"          # 相对配置根目录
+script = "server.js"
+args = ["--port", "{port}"]
+port = 3001                  # 本实例独占端口
+autostart = false
+restart_policy = "on-failure"  # always | on-failure | never
+max_retries = 5
+health_url = "http://127.0.0.1:{port}/health"
+# shutdown_line = "exit"     # 优雅停止时写入 stdin 的行（宽限 grace_secs 后强杀）

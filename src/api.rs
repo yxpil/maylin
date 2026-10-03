@@ -28,16 +28,25 @@ pub struct ApiError {
 impl ApiError {
     #[allow(dead_code)]
     pub fn bad(msg: impl Into<String>) -> Self {
-        Self { status: StatusCode::BAD_REQUEST, msg: msg.into() }
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            msg: msg.into(),
+        }
     }
     pub fn not_found(msg: impl Into<String>) -> Self {
-        Self { status: StatusCode::NOT_FOUND, msg: msg.into() }
+        Self {
+            status: StatusCode::NOT_FOUND,
+            msg: msg.into(),
+        }
     }
 }
 
 impl From<anyhow::Error> for ApiError {
     fn from(e: anyhow::Error) -> Self {
-        Self { status: StatusCode::INTERNAL_SERVER_ERROR, msg: format!("{e:#}") }
+        Self {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            msg: format!("{e:#}"),
+        }
     }
 }
 
@@ -91,17 +100,24 @@ async fn auth(State(st): State<Arc<AppState>>, req: Request, next: Next) -> Resp
         .map(|s| s.to_string())
         // WebSocket / 简单客户端可使用 ?token= 查询参数
         .or_else(|| {
-            req.uri()
-                .query()
-                .and_then(|q| q.split('&').find_map(|kv| kv.strip_prefix("token=").map(|s| s.to_string())))
+            req.uri().query().and_then(|q| {
+                q.split('&')
+                    .find_map(|kv| kv.strip_prefix("token=").map(|s| s.to_string()))
+            })
         });
 
     let role = token.as_ref().and_then(|t| st.roles.get(t)).copied();
     let Some(role) = role else {
-        st.metrics.auth_fails.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        st.metrics
+            .auth_fails
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         crate::events::emit_auth_fail(
             &st,
-            format!("认证失败: {} {} (remote token 有效性校验未通过)", req.method(), req.uri().path()),
+            format!(
+                "认证失败: {} {} (remote token 有效性校验未通过)",
+                req.method(),
+                req.uri().path()
+            ),
         )
         .await;
         return ApiError {
@@ -116,12 +132,19 @@ async fn auth(State(st): State<Arc<AppState>>, req: Request, next: Next) -> Resp
     if !authorized(role, &method, &path) {
         return ApiError {
             status: StatusCode::FORBIDDEN,
-            msg: format!("权限不足：当前角色 {} 无权执行 {} {}", role.as_str(), method, path),
+            msg: format!(
+                "权限不足：当前角色 {} 无权执行 {} {}",
+                role.as_str(),
+                method,
+                path
+            ),
         }
         .into_response();
     }
 
-    st.metrics.api_requests.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    st.metrics
+        .api_requests
+        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     next.run(req).await
 }
 
@@ -222,7 +245,10 @@ async fn list_instances(State(st): State<Arc<AppState>>) -> ApiResult<Json<Value
     Ok(Json(json!({ "instances": out })))
 }
 
-async fn get_instance(State(st): State<Arc<AppState>>, Path(name): Path<String>) -> ApiResult<Json<Value>> {
+async fn get_instance(
+    State(st): State<Arc<AppState>>,
+    Path(name): Path<String>,
+) -> ApiResult<Json<Value>> {
     let inst = get_inst(&st, &name).await?;
     Ok(Json(json!(view(&st, &inst).await)))
 }
@@ -231,7 +257,9 @@ async fn create_instance(
     State(st): State<Arc<AppState>>,
     Json(spec): Json<InstanceSpec>,
 ) -> ApiResult<Json<Value>> {
-    let msg = process::create_instance(&st, spec).await.map_err(ApiError::from)?;
+    let msg = process::create_instance(&st, spec)
+        .await
+        .map_err(ApiError::from)?;
     Ok(Json(json!({ "ok": true, "message": msg })))
 }
 
@@ -239,7 +267,9 @@ async fn remove_instance(
     State(st): State<Arc<AppState>>,
     Path(name): Path<String>,
 ) -> ApiResult<Json<Value>> {
-    let msg = process::remove_instance(&st, &name).await.map_err(ApiError::from)?;
+    let msg = process::remove_instance(&st, &name)
+        .await
+        .map_err(ApiError::from)?;
     Ok(Json(json!({ "ok": true, "message": msg })))
 }
 
@@ -247,7 +277,9 @@ async fn start_instance(
     State(st): State<Arc<AppState>>,
     Path(name): Path<String>,
 ) -> ApiResult<Json<Value>> {
-    let msg = process::start_instance(&st, &name).await.map_err(ApiError::from)?;
+    let msg = process::start_instance(&st, &name)
+        .await
+        .map_err(ApiError::from)?;
     Ok(Json(json!({ "ok": true, "message": msg })))
 }
 
@@ -255,7 +287,9 @@ async fn stop_instance(
     State(st): State<Arc<AppState>>,
     Path(name): Path<String>,
 ) -> ApiResult<Json<Value>> {
-    let msg = process::stop_instance(&st, &name).await.map_err(ApiError::from)?;
+    let msg = process::stop_instance(&st, &name)
+        .await
+        .map_err(ApiError::from)?;
     Ok(Json(json!({ "ok": true, "message": msg })))
 }
 
@@ -263,7 +297,9 @@ async fn restart_instance(
     State(st): State<Arc<AppState>>,
     Path(name): Path<String>,
 ) -> ApiResult<Json<Value>> {
-    let msg = process::restart_instance(&st, &name).await.map_err(ApiError::from)?;
+    let msg = process::restart_instance(&st, &name)
+        .await
+        .map_err(ApiError::from)?;
     Ok(Json(json!({ "ok": true, "message": msg })))
 }
 
@@ -356,13 +392,18 @@ async fn exec(State(st): State<Arc<AppState>>, Json(req): Json<ExecReq>) -> ApiR
         .acquire()
         .await
         .map_err(|e| ApiError::from(anyhow::anyhow!("exec 信号量不可用: {e}")))?;
-    st.metrics.exec_runs.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    st.metrics
+        .exec_runs
+        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     crate::events::emit(
         &st,
         "exec.run",
         "-",
         "info",
-        &format!("执行命令: {}", req.command.chars().take(120).collect::<String>()),
+        &format!(
+            "执行命令: {}",
+            req.command.chars().take(120).collect::<String>()
+        ),
     )
     .await;
 
@@ -375,7 +416,9 @@ async fn exec(State(st): State<Arc<AppState>>, Json(req): Json<ExecReq>) -> ApiR
     .map_err(|e| ApiError::from(anyhow::anyhow!("执行任务失败: {e}")))?;
 
     if out.timed_out {
-        return Ok(Json(json!({ "timeout": true, "message": "命令执行超时已被终止" })));
+        return Ok(Json(
+            json!({ "timeout": true, "message": "命令执行超时已被终止" }),
+        ));
     }
     Ok(Json(json!({
         "code": out.code,
@@ -394,7 +437,9 @@ async fn schedules(State(st): State<Arc<AppState>>) -> Json<Value> {
 }
 
 async fn reload(State(st): State<Arc<AppState>>) -> ApiResult<Json<Value>> {
-    let msg = process::load_configs(&st, true).await.map_err(ApiError::from)?;
+    let msg = process::load_configs(&st, true)
+        .await
+        .map_err(ApiError::from)?;
     Ok(Json(json!({ "ok": true, "message": msg })))
 }
 

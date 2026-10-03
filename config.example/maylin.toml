@@ -1,0 +1,54 @@
+# Maylin 节点主配置（示例模板）
+#
+# 复制为 config/maylin.toml 后直接使用；若该文件不存在，
+# maylin 首次启动也会自动生成一份等价配置（含随机 Token）。
+
+[node]
+name = "node-1"
+listen = "0.0.0.0:7000"      # API / WebSocket 终端监听地址
+data_dir = "data"            # 运行日志、事件、状态快照目录
+log_buffer_lines = 2000      # 内存中保留的每实例日志行数
+
+[auth]
+# 拥有 admin 权限的 Bearer Token（可配置多个），留空则首次启动自动生成随机 Token
+tokens = ["change-me-replace-with-your-own-token"]
+
+# 细粒度角色用户（可选，v0.2+）：
+#   admin    = 全部权限（tokens 列表中的令牌等价于 admin）
+#   operator = 可操作实例（启停/重启/日志/终端），不可 exec、不可改配置
+#   viewer   = 只读（状态/列表/日志/事件）
+#
+# [[auth.users]]
+# name = "ops"
+# token = "operator-token-please-change"
+# role = "operator"
+#
+# [[auth.users]]
+# name = "readonly"
+# token = "viewer-token-please-change"
+# role = "viewer"
+
+[alert]
+# 事件告警：匹配到的事件会以 POST JSON 推送到 webhook_url
+# （无论是否开启，事件都会写入 data/events.jsonl 供审计）
+enabled = false
+# webhook_url = "https://example.com/hook"   # 企业微信/钉钉/自建服务均可
+# events = ["instance.fail", "instance.giveup", "instance.unhealthy", "lb.down", "auth.fail"]
+#                                              # 留空 = 推送全部事件
+timeout_secs = 5
+
+[cluster]
+enabled = false
+# peers = ["http://192.168.1.10:7000", "http://192.168.1.11:7000"]
+# token = "集群互访令牌，需同时存在于各节点 auth.tokens"
+
+# 内置负载均衡（反向代理），上游可混合本机实例与远端节点
+[[load_balancer]]
+name = "web"
+listen = "0.0.0.0:8000"
+upstreams = [
+    "http://127.0.0.1:3001",
+    "http://127.0.0.1:3002",
+]
+health_path = "/health"
+health_interval_secs = 10

@@ -9,6 +9,9 @@ data/
 *.log
 *.swp
 
+# 本地渲染截图（体积大，不入库）
+docs/preview.png
+
 # IDE / 系统
 .idea/
 .vscode/

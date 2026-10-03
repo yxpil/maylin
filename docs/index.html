@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maylin — 无 Docker 的 Rust 服务集群管理器</title>
+<meta name="description" content="Maylin 用 Rust 子进程管理任意数量的 JS/Python/二进制实例，插件化运行时、多服务器集群、RBAC Token API、WebSocket 终端、cron 定时与内置负载均衡，无需 Docker。">
+<style>
+  :root{
+    --bg:#0a0e14;
+    --bg-soft:#0f151d;
+    --panel:#121a24;
+    --panel-2:#161f2b;
+    --line:#1e2b3a;
+    --text:#e6edf5;
+    --muted:#8b9bb0;
+    --accent:#4ea1ff;
+    --accent-2:#22d3a7;
+    --warn:#ffb545;
+    --radius:14px;
+    --mono:'JetBrains Mono','Cascadia Code',Consolas,'SF Mono',Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+    line-height:1.7;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+  code{font-family:var(--mono);font-size:.9em}
+
+  /* ---------- 顶部导航 ---------- */
+  header{
+    position:sticky;top:0;z-index:20;
+    backdrop-filter:blur(12px);
+    background:rgba(10,14,20,.82);
+    border-bottom:1px solid var(--line);
+  }
+  .nav{display:flex;align-items:center;gap:26px;height:60px}
+  .logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;letter-spacing:.2px}
+  .logo .mark{
+    width:26px;height:26px;border-radius:7px;
+    background:linear-gradient(135deg,var(--accent),var(--accent-2));
+    display:grid;place-items:center;font-size:14px;color:#04121c;font-weight:800;
+  }
+  .nav-links{display:flex;gap:22px;margin-left:auto;font-size:14px}
+  .nav-links a{color:var(--muted)}
+  .nav-links a:hover{color:var(--text);text-decoration:none}
+  @media(max-width:720px){.nav-links{display:none}}
+
+  /* ---------- Hero ---------- */
+  .hero{padding:88px 0 64px;position:relative}
+  .hero::before{
+    content:'';position:absolute;inset:-160px 0 auto 0;height:460px;
+    background:radial-gradient(680px 300px at 22% 30%,rgba(78,161,255,.15),transparent 70%),
+               radial-gradient(560px 280px at 78% 6%,rgba(34,211,167,.11),transparent 70%);
+    pointer-events:none;
+  }
+  .hero-inner{position:relative}
+  .tag{
+    display:inline-flex;align-items:center;gap:8px;
+    border:1px solid var(--line);background:var(--panel);
+    color:var(--muted);font-size:12.5px;padding:5px 12px;border-radius:999px;margin-bottom:22px;
+  }
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--accent-2);box-shadow:0 0 8px var(--accent-2)}
+  h1{font-size:clamp(32px,5.2vw,52px);line-height:1.18;letter-spacing:-.5px;font-weight:800}
+  h1 .grad{
+    background:linear-gradient(100deg,var(--accent) 10%,var(--accent-2) 85%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .lead{color:var(--muted);font-size:16.5px;max-width:660px;margin-top:20px}
+  .lead strong{color:var(--text);font-weight:600}
+  .cta{display:flex;flex-wrap:wrap;gap:12px;margin-top:34px}
+  .btn{
+    display:inline-flex;align-items:center;gap:8px;
+    padding:11px 20px;border-radius:10px;font-size:14.5px;font-weight:600;
+    border:1px solid var(--line);background:var(--panel);color:var(--text);transition:.18s;
+  }
+  .btn:hover{border-color:#33506e;background:var(--panel-2);text-decoration:none;transform:translateY(-1px)}
+  .btn.primary{
+    background:linear-gradient(135deg,var(--accent),#3d8ce0);
+    border-color:transparent;color:#04121c;
+  }
+  .btn.primary:hover{filter:brightness(1.08)}
+
+  /* ---------- 徽章 ---------- */
+  .badges{display:flex;flex-wrap:wrap;gap:8px;margin-top:30px}
+  .badges img{height:20px;display:block;opacity:.95}
+
+  /* ---------- 统计条 ---------- */
+  .stats{
+    display:grid;grid-template-columns:repeat(4,1fr);gap:1px;
+    background:var(--line);border:1px solid var(--line);
+    border-radius:var(--radius);overflow:hidden;margin-top:56px;
+  }
+  .stat{background:var(--bg-soft);padding:20px 22px}
+  .stat b{display:block;font-size:23px;font-weight:800;letter-spacing:-.3px}
+  .stat span{color:var(--muted);font-size:13px}
+  @media(max-width:720px){.stats{grid-template-columns:repeat(2,1fr)}}
+
+  /* ---------- 区块 ---------- */
+  section{padding:74px 0;border-top:1px solid var(--line)}
+  .sec-head{margin-bottom:34px}
+  .sec-head h2{font-size:clamp(23px,3vw,31px);font-weight:750;letter-spacing:-.3px}
+  .sec-head p{color:var(--muted);margin-top:10px;max-width:680px;font-size:15px}
+
+  /* ---------- 特性卡 ---------- */
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(268px,1fr));gap:16px}
+  .card{
+    background:var(--panel);border:1px solid var(--line);
+    border-radius:var(--radius);padding:22px;transition:.2s;
+  }
+  .card:hover{border-color:#2c445e;background:var(--panel-2);transform:translateY(-2px)}
+  .card h3{font-size:15.5px;font-weight:650;display:flex;align-items:center;gap:9px;margin-bottom:9px}
+  .ico{
+    width:26px;height:26px;border-radius:8px;display:grid;place-items:center;
+    background:rgba(78,161,255,.12);border:1px solid rgba(78,161,255,.25);
+    font-size:13px;flex:0 0 auto;
+  }
+  .card.g .ico{background:rgba(34,211,167,.12);border-color:rgba(34,211,167,.25)}
+  .card p{color:var(--muted);font-size:13.6px}
+  .card code{color:var(--accent-2);background:rgba(34,211,167,.08);padding:1px 5px;border-radius:5px}
+
+  /* ---------- 架构图 ---------- */
+  .diagram{
+    background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:12px;overflow-x:auto;
+  }
+  .diagram svg{display:block;min-width:620px;width:100%;height:auto}
+
+  /* ---------- 代码块 ---------- */
+  .term{
+    background:#070b10;border:1px solid var(--line);border-radius:var(--radius);
+    overflow:hidden;margin-top:8px;
+  }
+  .term-bar{
+    display:flex;align-items:center;gap:7px;padding:10px 14px;
+    border-bottom:1px solid var(--line);background:var(--panel);
+  }
+  .term-bar i{width:11px;height:11px;border-radius:50%;display:block}
+  .term-bar span{color:var(--muted);font-size:12.5px;font-family:var(--mono);margin-left:8px}
+  pre{padding:18px 20px;overflow-x:auto;font-family:var(--mono);font-size:13px;line-height:1.75}
+  pre .c{color:#5c7186}
+  pre .k{color:var(--accent)}
+  pre .s{color:var(--accent-2)}
+  pre .o{color:var(--warn)}
+
+  /* ---------- 表格 ---------- */
+  .tbl-wrap{border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:13.6px;min-width:560px}
+  th,td{padding:11px 16px;text-align:left;border-bottom:1px solid var(--line)}
+  th{background:var(--panel);color:var(--muted);font-weight:600;font-size:12.5px;letter-spacing:.3px}
+  tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:var(--panel)}
+  td code{color:var(--accent)}
+  .m{display:inline-block;font-family:var(--mono);font-size:11.5px;padding:2px 8px;border-radius:6px;font-weight:700}
+  .m.get{background:rgba(78,161,255,.14);color:var(--accent)}
+  .m.post{background:rgba(34,211,167,.14);color:var(--accent-2)}
+  .m.ws{background:rgba(255,181,69,.14);color:var(--warn)}
+
+  /* ---------- 两栏 ---------- */
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:820px){.two{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:24px}
+  .panel h3{font-size:16px;margin-bottom:14px;font-weight:650}
+  ul.clean{list-style:none;display:grid;gap:11px}
+  ul.clean li{color:var(--muted);font-size:13.8px;padding-left:20px;position:relative}
+  ul.clean li::before{
+    content:'';position:absolute;left:2px;top:9px;
+    width:6px;height:6px;border-radius:50%;background:var(--accent-2);
+  }
+  ul.clean li b{color:var(--text);font-weight:600}
+
+  footer{
+    border-top:1px solid var(--line);padding:38px 0 54px;
+    color:var(--muted);font-size:13.5px;
+  }
+  footer .fw{display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <div class="logo"><span class="mark">M</span> Maylin</div>
+    <nav class="nav-links">
+      <a href="#features">功能</a>
+      <a href="#arch">架构</a>
+      <a href="#start">快速开始</a>
+      <a href="#api">API</a>
+      <a href="#perf">性能</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap hero">
+  <div class="hero-inner">
+    <div class="tag"><span class="dot"></span> Rust · 无 Docker · 单文件二进制</div>
+    <h1>用 Rust 子进程管好你的<br><span class="grad">一堆 JS / Python 服务</span></h1>
+    <p class="lead">
+      Maylin 是一个服务集群管理器：以 <strong>Rust 子进程 + 插件</strong> 直接拉起任意数量的实例，
+      每个实例独占端口、互不干扰，<strong>不需要 Docker</strong>。内置多服务器集群、RBAC Token API、
+      WebSocket 终端、cron 定时启动与反向代理负载均衡。
+    </p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/yxpil/maylin">在 GitHub 查看 →</a>
+      <a class="btn" href="#start">快速开始</a>
+      <a class="btn" href="https://github.com/yxpil/maylin/releases">下载二进制</a>
+    </div>
+    <div class="badges">
+      <img src="https://github.com/yxpil/maylin/actions/workflows/ci.yml/badge.svg" alt="CI">
+      <img src="https://img.shields.io/github/v/release/yxpil/maylin?label=release&color=4ea1ff" alt="Release">
+      <img src="https://img.shields.io/badge/license-MIT-22d3a7" alt="License">
+      <img src="https://img.shields.io/badge/platform-windows%20%7C%20linux%20%7C%20macos-8b9bb0" alt="Platform">
+    </div>
+
+    <div class="stats">
+      <div class="stat"><b>10,902</b><span>LB 转发 RPS（p99 47.7ms）</span></div>
+      <div class="stat"><b>61,000</b><span>API RPS（p99 5.3ms）</span></div>
+      <div class="stat"><b>0</b><span>故障转移失败请求</span></div>
+      <div class="stat"><b>~2000</b><span>行 Rust，零运行时依赖</span></div>
+    </div>
+  </div>
+</div>
+
+<section id="features">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>核心能力</h2>
+      <p>每一块都可以单独用，也可以组合成一个小型集群编排层。</p>
+    </div>
+    <div class="grid">
+      <div class="card">
+        <h3><span class="ico">⚙</span> 无 Docker 多子进程</h3>
+        <p>直接托管 JS / Python / Go / 任意二进制，<code>CREATE_NO_WINDOW</code> 防弹窗、<code>kill_on_drop</code> 防孤儿，每个实例独占端口。</p>
+      </div>
+      <div class="card g">
+        <h3><span class="ico">🧩</span> 插件化运行时</h3>
+        <p>新增一种运行时只需写一个 toml：<code>command</code> + <code>args</code>，支持 <code>{script}</code> <code>{port}</code> <code>{name}</code> 占位符。</p>
+      </div>
+      <div class="card">
+        <h3><span class="ico">🛡</span> supervisor 守护</h3>
+        <p>崩溃按策略自动拉起，指数退避（2s×n，上限 30s），超过 <code>max_retries</code> 熔断并告警，绝不无限重启。</p>
+      </div>
+      <div class="card g">
+        <h3><span class="ico">🌐</span> 多服务器集群</h3>
+        <p>各节点 <code>peers</code> 互配，状态聚合查询、<code>restart all</code> 动作广播，负载均衡上游可混合跨机实例。</p>
+      </div>
+      <div class="card">
+        <h3><span class="ico">🔑</span> RBAC Token API</h3>
+        <p>三级角色 <code>admin / operator / viewer</code>，全部 REST 与 WebSocket 强制 Bearer Token，按方法与路径判权。</p>
+      </div>
+      <div class="card g">
+        <h3><span class="ico">⌨</span> 命令终端</h3>
+        <p><code>ctl terminal</code> 直连实例 stdin/stdout 做交互调试，<code>ctl exec</code> 在节点上跑 shell 命令（带并发上限）。</p>
+      </div>
+      <div class="card">
+        <h3><span class="ico">⏱</span> cron 定时启动</h3>
+        <p>标准 5 段 cron 驱动 start / stop / restart，target 支持实例名或 <code>all</code>，配置热加载不重启进程。</p>
+      </div>
+      <div class="card g">
+        <h3><span class="ico">📊</span> 负载均衡 + 可观测</h3>
+        <p>round-robin + 健康探活摘除 + <strong>请求级失败重试</strong>；事件环缓冲、JSONL 落盘、webhook 告警、状态快照。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="arch">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>架构</h2>
+      <p>一个控制面（API / 终端 / 调度）+ 一个数据面（进程与端口），控制面故障不影响已运行实例。</p>
+    </div>
+    <div class="diagram">
+      <svg viewBox="0 0 1000 430" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Maylin 架构图">
+        <defs>
+          <marker id="ar" markerWidth="9" markerHeight="9" refX="7.5" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L7.5,3 z" fill="#3f5a76"/>
+          </marker>
+          <linearGradient id="ac" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#4ea1ff"/><stop offset="100%" stop-color="#22d3a7"/>
+          </linearGradient>
+        </defs>
+
+        <!-- 客户端 -->
+        <rect x="30" y="30" width="200" height="74" rx="11" fill="#121a24" stroke="#25384c"/>
+        <text x="130" y="60" fill="#e6edf5" font-size="14" font-weight="600" text-anchor="middle">maylin ctl</text>
+        <text x="130" y="82" fill="#8b9bb0" font-size="11.5" text-anchor="middle">CLI 客户端</text>
+
+        <rect x="30" y="124" width="200" height="74" rx="11" fill="#121a24" stroke="#25384c"/>
+        <text x="130" y="154" fill="#e6edf5" font-size="14" font-weight="600" text-anchor="middle">HTTP API</text>
+        <text x="130" y="176" fill="#8b9bb0" font-size="11.5" text-anchor="middle">REST + WS 终端</text>
+
+        <rect x="30" y="218" width="200" height="74" rx="11" fill="#121a24" stroke="#25384c"/>
+        <text x="130" y="248" fill="#e6edf5" font-size="14" font-weight="600" text-anchor="middle">浏览器 / 其他系统</text>
+        <text x="130" y="270" fill="#8b9bb0" font-size="11.5" text-anchor="middle">Bearer Token</text>
+
+        <!-- 箭头 -->
+        <line x1="230" y1="67" x2="330" y2="150" stroke="#3f5a76" stroke-width="1.5" marker-end="url(#ar)"/>
+        <line x1="230" y1="161" x2="330" y2="161" stroke="#3f5a76" stroke-width="1.5" marker-end="url(#ar)"/>
+        <line x1="230" y1="255" x2="330" y2="172" stroke="#3f5a76" stroke-width="1.5" marker-end="url(#ar)"/>
+
+        <!-- 认证 -->
+        <rect x="340" y="130" width="120" height="62" rx="10" fill="#0f1b26" stroke="#22d3a7" stroke-opacity=".55"/>
+        <text x="400" y="156" fill="#22d3a7" font-size="12.5" font-weight="600" text-anchor="middle">RBAC</text>
+        <text x="400" y="175" fill="#8b9bb0" font-size="10.5" text-anchor="middle">admin/op/viewer</text>
+
+        <!-- 节点大框 -->
+        <rect x="500" y="40" width="470" height="330" rx="16" fill="#0d141d" stroke="#25384c"/>
+        <rect x="500" y="40" width="470" height="38" rx="16" fill="url(#ac)" opacity=".14"/>
+        <text x="520" y="65" fill="#4ea1ff" font-size="13.5" font-weight="700">maylind 节点</text>
+
+        <rect x="522" y="96" width="200" height="66" rx="10" fill="#121a24" stroke="#25384c"/>
+        <text x="622" y="121" fill="#e6edf5" font-size="12.5" text-anchor="middle">进程管理器</text>
+        <text x="622" y="141" fill="#8b9bb0" font-size="10.5" text-anchor="middle">supervisor · 优雅停止</text>
+
+        <rect x="746" y="96" width="200" height="66" rx="10" fill="#121a24" stroke="#25384c"/>
+        <text x="846" y="121" fill="#e6edf5" font-size="12.5" text-anchor="middle">插件运行时</text>
+        <text x="846" y="141" fill="#8b9bb0" font-size="10.5" text-anchor="middle">node · python · binary</text>
+
+        <rect x="522" y="176" width="200" height="66" rx="10" fill="#121a24" stroke="#25384c"/>
+        <text x="622" y="201" fill="#e6edf5" font-size="12.5" text-anchor="middle">cron 调度器</text>
+        <text x="622" y="221" fill="#8b9bb0" font-size="10.5" text-anchor="middle">start / stop / restart</text>
+
+        <rect x="746" y="176" width="200" height="66" rx="10" fill="#121a24" stroke="#25384c"/>
+        <text x="846" y="201" fill="#e6edf5" font-size="12.5" text-anchor="middle">负载均衡</text>
+        <text x="846" y="221" fill="#8b9bb0" font-size="10.5" text-anchor="middle">轮询 · 摘除 · 重试</text>
+
+        <rect x="522" y="256" width="424" height="52" rx="10" fill="#121a24" stroke="#25384c"/>
+        <text x="734" y="279" fill="#e6edf5" font-size="12.5" text-anchor="middle">事件 / 告警 / 状态快照</text>
+        <text x="734" y="297" fill="#8b9bb0" font-size="10.5" text-anchor="middle">events.jsonl · webhook · state.json</text>
+
+        <!-- 实例 -->
+        <rect x="522" y="322" width="128" height="34" rx="8" fill="#0f1b26" stroke="#4ea1ff" stroke-opacity=".5"/>
+        <text x="586" y="344" fill="#4ea1ff" font-size="11" text-anchor="middle">api-node :3001</text>
+        <rect x="662" y="322" width="128" height="34" rx="8" fill="#0f1b26" stroke="#4ea1ff" stroke-opacity=".5"/>
+        <text x="726" y="344" fill="#4ea1ff" font-size="11" text-anchor="middle">api-py :3002</text>
+        <rect x="802" y="322" width="144" height="34" rx="8" fill="#0f1b26" stroke="#4ea1ff" stroke-opacity=".5"/>
+        <text x="874" y="344" fill="#4ea1ff" font-size="11" text-anchor="middle">worker :3003 …</text>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<section id="start">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>快速开始</h2>
+      <p>首次启动会自动生成 <code>config/</code> 目录、随机访问令牌与 demo 示例，30 秒内可跑通全流程。</p>
+    </div>
+    <div class="term">
+      <div class="term-bar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i><span>bash</span></div>
+<pre><span class="c"># 1. 构建（或直接从 Releases 下载预编译二进制）</span>
+<span class="k">cargo</span> build --release
+
+<span class="c"># 2. 启动节点（首次运行自动生成 config/ 与随机 Token）</span>
+<span class="k">./target/release/maylin</span> node --config config/maylin.toml
+
+<span class="c"># 3. 配置客户端</span>
+<span class="k">export</span> MAYLIN_TOKEN=<span class="s">&lt;config/maylin.toml 里的 tokens[0]&gt;</span>
+<span class="k">export</span> MAYLIN_URL=<span class="s">http://127.0.0.1:7000</span>
+
+<span class="c"># 4. 管理实例</span>
+<span class="k">maylin ctl</span> start demo-node        <span class="c"># 拉起 Node 实例 :3001</span>
+<span class="k">maylin ctl</span> start demo-python      <span class="c"># 拉起 Python 实例 :3002</span>
+<span class="k">maylin ctl</span> status                 <span class="c"># 节点状态 + 指标</span>
+<span class="k">maylin ctl</span> logs demo-node --lines 50
+<span class="k">maylin ctl</span> terminal demo-node     <span class="c"># 交互式终端</span>
+<span class="k">maylin ctl</span> events --limit 20      <span class="c"># 事件审计</span>
+<span class="k">maylin ctl</span> cluster                <span class="c"># 集群聚合状态</span>
+
+<span class="c"># 5. 负载均衡 :8000 → 轮询 :3001 / :3002，停掉一个也零失败</span>
+<span class="k">curl</span> http://127.0.0.1:8000/</pre>
+    </div>
+  </div>
+</section>
+
+<section id="api">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>HTTP API</h2>
+      <p>全部接口需 <code>Authorization: Bearer &lt;token&gt;</code>，WebSocket 可用 <code>?token=</code>。写操作按角色校验权限。</p>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th style="width:90px">方法</th><th style="width:320px">路径</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td><span class="m get">GET</span></td><td><code>/api/status</code></td><td>节点状态（实例 + LB + 集群 + metrics）</td></tr>
+          <tr><td><span class="m get">GET</span> <span class="m post">POST</span></td><td><code>/api/instances</code></td><td>实例列表 / 创建实例（JSON）</td></tr>
+          <tr><td><span class="m get">GET</span></td><td><code>/api/instances/{name}</code></td><td>实例详情（状态 / pid / 重试次数）</td></tr>
+          <tr><td><span class="m post">POST</span></td><td><code>/api/instances/{name}/start</code></td><td>启动实例</td></tr>
+          <tr><td><span class="m post">POST</span></td><td><code>/api/instances/{name}/stop</code></td><td>优雅停止（宽限后强杀）</td></tr>
+          <tr><td><span class="m post">POST</span></td><td><code>/api/instances/{name}/restart</code></td><td>重启实例</td></tr>
+          <tr><td><span class="m get">GET</span></td><td><code>/api/instances/{name}/logs?lines=100</code></td><td>实例日志</td></tr>
+          <tr><td><span class="m ws">WS</span></td><td><code>/api/instances/{name}/terminal</code></td><td>WebSocket 终端（stdin / stdout）</td></tr>
+          <tr><td><span class="m post">POST</span></td><td><code>/api/exec</code></td><td>在节点执行 shell 命令（并发受限）</td></tr>
+          <tr><td><span class="m get">GET</span></td><td><code>/api/events?limit=100</code></td><td>事件流（启动 / 退出 / 重启 / 摘除 / 认证失败）</td></tr>
+          <tr><td><span class="m get">GET</span></td><td><code>/api/plugins</code> <code>/api/schedules</code></td><td>插件与定时任务</td></tr>
+          <tr><td><span class="m post">POST</span></td><td><code>/api/reload</code></td><td>重新扫描配置目录（不影响运行中实例）</td></tr>
+          <tr><td><span class="m get">GET</span></td><td><code>/api/lb/status</code></td><td>负载均衡上游健康状态</td></tr>
+          <tr><td><span class="m get">GET</span> <span class="m post">POST</span></td><td><code>/api/cluster/status</code> <code>/api/cluster/action</code></td><td>集群聚合状态 / 动作广播</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="perf">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>实测与工程细节</h2>
+      <p>数据来自本机 release 构建（<code>examples/loadtest.rs</code>，可自行复现）。</p>
+    </div>
+    <div class="two">
+      <div class="panel">
+        <h3>压测结果</h3>
+        <ul class="clean">
+          <li><b>LB 反向代理</b>：并发 100 × 5000 请求 → 10,902 RPS，p99 47.7ms</li>
+          <li><b>控制面 API</b>：并发 50 × 2000 请求 → 61,000 RPS，p99 5.3ms</li>
+          <li><b>故障转移</b>：停掉一个上游后连续请求零失败（请求级重试到存活上游）</li>
+          <li><b>E2E</b>：cargo 集成测试拉起真实节点，18.5 秒验证 11 步全链路</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h3>踩过的坑（已固化）</h3>
+        <ul class="clean">
+          <li><b>Windows 命名管道不可用</b>：Rust std / tokio 建匿名管道报 os error 231 → 改用经典 <code>CreatePipe</code> + 阻塞泵线程</li>
+          <li><b>管道 EOF 永不到达</b>：改读端为 <code>PeekNamedPipe</code> 轮询 + 退出标志排空，不依赖 EOF</li>
+          <li><b>系统代理劫持回环流量</b>：内部健康检查 / 转发 / 集群通信全部 <code>no_proxy()</code> 直连</li>
+          <li><b>跨平台</b>：Windows 一套管道实现，unix 走 <code>std::io::pipe</code> + BufRead，SIGTERM 分支隔离</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap fw">
+    <div>Maylin · MIT License · © 2026 yxpil</div>
+    <div>
+      <a href="https://github.com/yxpil/maylin">GitHub</a> ·
+      <a href="https://github.com/yxpil/maylin#readme">文档</a> ·
+      <a href="https://github.com/yxpil/maylin/releases">下载</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

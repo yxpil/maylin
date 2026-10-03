@@ -1,0 +1,6 @@
+[plugin]
+name = "binary"
+command = "{script}"         # 直接运行可执行文件（Go / Rust / 任意二进制）
+args = []
+health_interval_secs = 10
+grace_secs = 5

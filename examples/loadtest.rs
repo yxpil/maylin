@@ -21,9 +21,7 @@ async fn main() {
     let total: u64 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(1000);
     let token = args.get(4).cloned();
 
-    eprintln!(
-        "压测目标 {url}  并发={conc}  总请求={total}"
-    );
+    eprintln!("压测目标 {url}  并发={conc}  总请求={total}");
 
     let mut b = reqwest::Client::builder()
         .no_proxy()
@@ -94,13 +92,20 @@ async fn main() {
     println!("=============== 压测报告 ===============");
     println!("目标        : {url}");
     println!("并发        : {conc}");
-    println!("总请求      : {total}  (成功 {} / 失败 {})", ok.load(Ordering::SeqCst), fail.load(Ordering::SeqCst));
+    println!(
+        "总请求      : {total}  (成功 {} / 失败 {})",
+        ok.load(Ordering::SeqCst),
+        fail.load(Ordering::SeqCst)
+    );
     println!("耗时        : {:.2?}", elapsed);
     println!("吞吐 RPS    : {rps:.0}");
     println!("延迟 p50    : {:.2} ms", pct(0.50));
     println!("延迟 p90    : {:.2} ms", pct(0.90));
     println!("延迟 p95    : {:.2} ms", pct(0.95));
     println!("延迟 p99    : {:.2} ms", pct(0.99));
-    println!("延迟 max    : {:.2} ms", lats.last().copied().unwrap_or(0.0));
+    println!(
+        "延迟 max    : {:.2} ms",
+        lats.last().copied().unwrap_or(0.0)
+    );
     println!("========================================");
 }

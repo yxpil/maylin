@@ -17,7 +17,11 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "maylin", version, about = "Maylin - 无 Docker 的 Rust 服务集群管理器")]
+#[command(
+    name = "maylin",
+    version,
+    about = "Maylin - 无 Docker 的 Rust 服务集群管理器"
+)]
 struct Cli {
     #[command(subcommand)]
     cmd: Commands,
@@ -65,7 +69,10 @@ async fn run_node(config_path: String) -> Result<()> {
     let cfg_path = PathBuf::from(&config_path);
     let fresh = config::bootstrap_if_missing(&cfg_path)?;
     if fresh {
-        eprintln!("首次运行：已在 {} 生成默认配置（含随机访问令牌，见 tokens 字段）", cfg_path.display());
+        eprintln!(
+            "首次运行：已在 {} 生成默认配置（含随机访问令牌，见 tokens 字段）",
+            cfg_path.display()
+        );
     }
     let mut cfg = config::load_root(&cfg_path)?;
     if cfg.auth.tokens.is_empty() {

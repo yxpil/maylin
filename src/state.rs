@@ -78,7 +78,10 @@ impl RunStatus {
         }
     }
     pub fn alive(&self) -> bool {
-        matches!(self, RunStatus::Starting | RunStatus::Running | RunStatus::Unhealthy)
+        matches!(
+            self,
+            RunStatus::Starting | RunStatus::Running | RunStatus::Unhealthy
+        )
     }
 }
 
@@ -250,7 +253,12 @@ impl AppState {
 
     /// 用于本节点 API 认证/集群互访的默认 token
     pub fn token(&self) -> &str {
-        self.cfg.auth.tokens.first().map(|s| s.as_str()).unwrap_or("")
+        self.cfg
+            .auth
+            .tokens
+            .first()
+            .map(|s| s.as_str())
+            .unwrap_or("")
     }
 
     pub fn log_file_path(&self, name: &str) -> PathBuf {

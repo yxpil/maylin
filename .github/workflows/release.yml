@@ -1,0 +1,117 @@
+name: Release
+
+# 推送 v* 标签时自动构建三平台二进制并发布 Release；
+# 也可手动触发（只产出构建产物，不发布），用于验证打包流程。
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: 构建 ${{ matrix.artifact }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: maylin-x86_64-pc-windows-msvc
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: maylin-x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: maylin-aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Rust 工具链
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: 缓存 Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: 构建 release 二进制
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: 打包
+        shell: bash
+        run: |
+          set -e
+          BIN="target/${{ matrix.target }}/release/maylin"
+          if [ -f "$BIN.exe" ]; then BIN="$BIN.exe"; fi
+          mkdir -p "dist/${{ matrix.artifact }}"
+          cp "$BIN" "dist/${{ matrix.artifact }}/"
+          cp README.md LICENSE "dist/${{ matrix.artifact }}/"
+          cp -r config.example "dist/${{ matrix.artifact }}/" 2>/dev/null || true
+          cd dist
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            7z a -tzip "${{ matrix.artifact }}.zip" "./${{ matrix.artifact }}/*" >/dev/null
+          else
+            tar -czf "${{ matrix.artifact }}.tar.gz" "${{ matrix.artifact }}"
+          fi
+          echo "=== 产物："
+          ls -lh
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: 发布 Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 下载全部构建产物
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: 生成 SHA256 校验和
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: 创建 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          body: |
+            ## 安装
+
+            从下方附件下载对应平台压缩包，解压后即可运行（单文件二进制，无外部依赖）：
+
+            | 平台 | 文件 |
+            |---|---|
+            | Windows x64 | `maylin-x86_64-pc-windows-msvc.zip` |
+            | Linux x64 | `maylin-x86_64-unknown-linux-gnu.tar.gz` |
+            | macOS (Apple Silicon) | `maylin-aarch64-apple-darwin.tar.gz` |
+
+            ```bash
+            # 首次运行会自动生成 config/ 目录、随机 Token 与 demo 示例
+            maylin node --config config/maylin.toml
+            ```
+
+            校验下载完整性：`sha256sum -c SHA256SUMS.txt`
