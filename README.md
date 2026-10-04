@@ -269,3 +269,15 @@ target/release/examples/loadtest.exe http://127.0.0.1:7000/api/status 50 2000 <t
 `maylin ctl exec` 在 Windows 走 `cmd /C`，在 Linux/macOS 走 `bash -lc`。
 端口占用请先停止占用进程；插件 `command` 需在 PATH 中或使用绝对路径。
 若守护进程被强杀（非 Ctrl-C），其子进程可能成为孤儿进程，请手动清理。
+
+---
+
+<div align="center">
+
+<a href="https://github.com/yxpil/maylin">
+  <img width="100%" src="https://alittlecatgirlpanel.yxp.hk/card?repo=yxpil/maylin" alt="gh-card · yxpil/maylin" />
+</a>
+
+<sub>Powered by <a href="https://alittlecatgirlpanel.yxp.hk"><b>gh-card</b></a> · 粉色手写体 README 仓库名片</sub>
+
+</div>
